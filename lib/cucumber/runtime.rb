@@ -19,7 +19,6 @@ module Cucumber
 
     include Formatter::Duration
     include Runtime::UserInterface
-
     def initialize(configuration = Configuration.default)
       @current_scenario = nil
       @configuration = Configuration.parse(configuration)
@@ -136,10 +135,10 @@ module Cucumber
                   steps << {
                     'name' => step.name,
                     'args' => args.map do |arg|
-                      {
-                        'offset' => arg.offset,
-                        'val' => arg.val
-                      }
+                    {
+                    'offset' => arg.offset,
+                    'val' => arg.val
+                    }
                     end
                   }
                 end
@@ -165,7 +164,7 @@ module Cucumber
       Ast::DocString.new(string_without_triple_quotes,content_type)
     end
 
-  private
+    private
 
     def fire_after_configuration_hook #:nodoc
       @support_code.fire_hook(:after_configuration, @configuration)
@@ -173,9 +172,10 @@ module Cucumber
 
     def features
       @loader ||= Runtime::FeaturesLoader.new(
-        @configuration.feature_files,
-        @configuration.filters,
-        @configuration.tag_expression)
+      db_features,
+      #@configuration.feature_files,
+      @configuration.filters,
+      @configuration.tag_expression)
       @loader.features
     end
 
@@ -190,6 +190,53 @@ module Cucumber
 
     def log
       Cucumber.logger
+    end
+
+  # returns array of gherkin features
+    def db_features
+      make_features(get_features_from_db)
+    end
+
+  # returns json array of feature json objects
+    def get_features_from_db
+      # http://atf2bdd.devops.mnscorp.net/atf-api/api/features/allFeatures/proj_name
+      # get the features from the atf api db
+      # authentication
+      # return array? of the json
+      uri = URI.parse('http://atf2bdd.devops.mnscorp.net/atf-api/api/features/allFeatures/projName'.gsub(/ /, '%20'))
+
+      req = Net::HTTP::Get.new(uri.request_uri)
+      req.basic_auth 'username', 'password'
+
+      res = Net::HTTP.start(uri.hostname, 80) {|http|
+        http.request(req)
+      }
+      # assuming successful
+      res.body
+    end
+
+    public 
+  # JsonParser works with Json or the hash of it. Needs to be in an array
+    def gherkinise(rfeat)
+      require 'gherkin/json_parser'
+      require 'stringio'
+      require 'gherkin/formatter/pretty_formatter'
+      io = StringIO.new
+      pf = Gherkin::Formatter::PrettyFormatter.new(io, true, false)
+      parser = Gherkin::JSONParser.new(pf,pf)
+      parser.parse [].push(rfeat)
+      io.string.strip
+    end
+
+    def make_features(json)
+      # make json string a ruby obj so can use each on it
+      obj = MultiJson.load(json)
+      my_features = []
+      obj.each do |feature|
+        gherkin = gherkinise feature
+        my_features.push gherkin
+      end
+      my_features
     end
   end
 
